@@ -1,0 +1,66 @@
+name: flenity-combate
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flenity}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env (make setup)}
+      POSTGRES_DB: ${POSTGRES_DB:-flenity_combate}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      target: runtime
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flenity}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flenity_combate}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env (make setup)}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Sao_Paulo}
+      PORT: 3000
+      # Origens de navegador aceitas: a web e o app Flutter rodando como página (make mobile-web)
+      CORS_ORIGIN: http://localhost:${WEB_PORT:-8080},http://localhost:${MOBILE_WEB_PORT:-5180}
+      # Fotos e vídeos da comunidade (persistidos no volume `media`)
+      MEDIA_DIR: /app/storage/media
+    volumes:
+      - media:/app/storage/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Utilitário (make seed): roda o seed de demonstração com as dependências de desenvolvimento.
+  seed:
+    profiles: ["tools"]
+    build:
+      context: ./api
+      target: build
+    command: npx tsx prisma/seed.ts
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flenity}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flenity_combate}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Sao_Paulo}
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  media:

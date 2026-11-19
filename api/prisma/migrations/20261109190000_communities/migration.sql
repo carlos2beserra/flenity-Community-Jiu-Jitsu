@@ -1,0 +1,1 @@
+-- No schema changes. Community tables were created in 20261109183000_communities.
